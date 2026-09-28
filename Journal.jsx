@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useTable } from '../lib/useTable'
-import { ymd, addDays, monday, pad, fmt } from '../lib/util'
+import { useTable } from './useTable'
+import { ymd, addDays, monday, pad, fmt } from './util'
 
 const ACTION = { created: 'создано', updated: 'изменено', completed: 'выполнено', deleted: 'удалено' }
 const ENTITY = { tasks: 'задача', events: 'событие', mind_nodes: 'узел карты', time_blocks: 'блок времени' }

@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { ZoomIn, ZoomOut, Plus, Trash2, ImagePlus, X } from 'lucide-react'
-import { useTable } from '../lib/useTable'
-import { uploadImage } from '../lib/supabase'
-import { PASTELS } from '../lib/util'
+import { useTable } from './useTable'
+import { uploadImage } from './supabase'
+import { PASTELS } from './util'
 
 const W = 170, H = 56
 

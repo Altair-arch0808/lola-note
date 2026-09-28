@@ -1,5 +1,5 @@
 export default {
-  content: ['./index.html', './src/**/*.{js,jsx}'],
+  content: ['./index.html', './*.{js,jsx}'],
   theme: {
     extend: {
       fontFamily: { sans: ['Quicksand', 'ui-sans-serif', 'system-ui', 'sans-serif'] },

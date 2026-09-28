@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useTable } from '../lib/useTable'
-import { PASTELS, ymd, parseYmd, addDays, monday, pad } from '../lib/util'
+import { useTable } from './useTable'
+import { PASTELS, ymd, parseYmd, addDays, monday, pad } from './util'
 
 const H = 48, START = 6, END = 23
 const hours = Array.from({ length: END - START }, (_, i) => START + i)

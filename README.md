@@ -4,7 +4,7 @@
 
 ## 1. Supabase
 1. Создайте проект на supabase.com.
-2. **SQL Editor** → вставьте содержимое `supabase/schema.sql` → Run (создаст таблицы, защиту RLS и хранилище `media`).
+2. **SQL Editor** → вставьте содержимое `schema.sql` → Run (создаст таблицы, защиту RLS и хранилище `media`).
 3. **Project Settings → API** — скопируйте `Project URL` и `anon public key`.
 4. (по желанию) **Authentication → Providers → Email** — отключите «Confirm email», чтобы входить сразу после регистрации.
 

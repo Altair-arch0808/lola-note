@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Trash2, ImagePlus } from 'lucide-react'
-import { useTable } from '../lib/useTable'
-import { uploadImage } from '../lib/supabase'
-import { fmt, toLocalInput, ymd, addDays } from '../lib/util'
+import { useTable } from './useTable'
+import { uploadImage } from './supabase'
+import { fmt, toLocalInput, ymd, addDays } from './util'
 
 export default function Tasks() {
   const { rows, add, update, remove } = useTable('tasks')

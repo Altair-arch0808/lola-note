@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Trash2 } from 'lucide-react'
-import { useTable } from '../lib/useTable'
-import { ymd, fmt, countdown, PASTELS, toLocalInput } from '../lib/util'
+import { useTable } from './useTable'
+import { ymd, fmt, countdown, PASTELS, toLocalInput } from './util'
 
 export default function Calendar() {
   const { rows, add, remove } = useTable('events', 'starts_at')

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Calendar as CalIcon, CheckSquare, Network, Clock, BookOpen, Palette, LogOut, ImagePlus } from 'lucide-react'
-import { supabase, uploadImage } from './lib/supabase'
-import { GRADIENTS, PASTELS } from './lib/util'
-import Auth from './components/Auth'
-import Calendar from './components/Calendar'
-import Tasks from './components/Tasks'
-import MindMap from './components/MindMap'
-import Planner from './components/Planner'
-import Journal from './components/Journal'
+import { supabase, uploadImage } from './supabase'
+import { GRADIENTS, PASTELS } from './util'
+import Auth from './Auth'
+import Calendar from './Calendar'
+import Tasks from './Tasks'
+import MindMap from './MindMap'
+import Planner from './Planner'
+import Journal from './Journal'
 
 const TABS = [
   { id: 'calendar', label: 'Календарь', icon: CalIcon, View: Calendar },
