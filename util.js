@@ -19,3 +19,11 @@ export function countdown(iso, now = Date.now()) {
   if (m <= 0) return 'уже наступило'
   return `${Math.floor(m / 1440)} дн ${Math.floor((m % 1440) / 60)} ч ${m % 60} мин`
 }
+
+// Осветлить (amt > 0) или затемнить (amt < 0) цвет вида #rrggbb; amt от -1 до 1
+export function shade(hex, amt) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return hex || '#b9a5ee'
+  const n = parseInt(hex.slice(1), 16)
+  const f = c => Math.round(amt < 0 ? c * (1 + amt) : c + (255 - c) * amt)
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`
+}
