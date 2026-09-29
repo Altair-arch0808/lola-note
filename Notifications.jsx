@@ -4,7 +4,7 @@ import { useSettings, saveSettings } from './store'
 import { mergeNotify, alertFor, SOUND_LABELS, VIBES } from './supabase/functions/_shared/reminders.js'
 import { playSound, buzz, unlockAudio } from './sounds'
 import { deviceTz, notifySupported, permission, askPermission, show, isIOS, isStandalone,
-         VAPID_KEY, pushSupported, pushActive, enablePush, disablePush } from './notify'
+         VAPID_KEY, pushSupported, pushActive, enablePush, disablePush, testServerPush } from './notify'
 
 const LEAD_TASK = [[0, 'в момент срока'], [5, 'за 5 минут'], [10, 'за 10 минут'], [30, 'за 30 минут'], [60, 'за 1 час']]
 const LEAD_EVENT = [[0, 'в момент начала'], [30, 'за 30 минут'], [60, 'за 1 час'], [180, 'за 3 часа'], [1440, 'за 1 день']]
@@ -83,6 +83,17 @@ export default function NotifyPanel() {
   const test = async () => {
     const ok = await show({ title: '✨ Планер', body: 'Так будут выглядеть напоминания', key: `test:${Date.now()}`, tab: 'today' }, alertFor(n, 'tasks'))
     if (!ok) setMsg('Не удалось показать уведомление на этом устройстве.')
+  }
+
+  const testPush = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await testServerPush()
+      if (!r.devices) setMsg('На сервере нет ни одной подписки — включите «Приходят при закрытом приложении» ещё раз.')
+      else if (!r.sent) setMsg('Сервер не смог доставить push. Отключите и включите «Приходят при закрытом приложении».')
+      else setMsg('Пробный push отправлен — заблокируйте экран и подождите пару секунд.')
+    } catch (e) { setMsg(e.message || 'Не получилось проверить') }
+    setBusy(false)
   }
 
   const unsupported = !notifySupported()
@@ -178,6 +189,7 @@ export default function NotifyPanel() {
           )}
           <div className="flex items-center gap-2">
             <button className="btn-ghost !py-1 text-sm" onClick={test} disabled={!granted}>Показать пробное</button>
+            {VAPID_KEY && <button className="btn-ghost !py-1 text-sm" onClick={testPush} disabled={busy || !push}>Проверить push</button>}
             <span className="text-xs opacity-50 ml-auto">пояс: {n.tz || deviceTz() || '—'}</span>
           </div>
         </>

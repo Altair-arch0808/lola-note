@@ -93,3 +93,20 @@ export async function pushLogout() {
   if (!navigator.onLine) return
   try { await Promise.race([disablePush(), new Promise(r => setTimeout(r, 3000))]) } catch { /* выходим в любом случае */ }
 }
+
+// Пробный push с сервера на все устройства пользователя: показывает, на каком шаге цепочка обрывается
+export async function testServerPush() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Сначала войдите в аккаунт')
+  let res
+  try {
+    res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-reminders`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, 'x-test-push': '1', 'Content-Type': 'application/json' },
+      body: '{}'
+    })
+  } catch { throw new Error('Функция send-reminders недоступна: она не задеплоена или нет связи') }
+  if (res.status === 404) throw new Error('Функция send-reminders не задеплоена в Supabase')
+  if (!res.ok) throw new Error('Сервер ответил ошибкой ' + res.status + ' — проверьте секреты VAPID_* в Supabase')
+  return res.json()
+}

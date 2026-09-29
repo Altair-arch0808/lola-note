@@ -11,6 +11,8 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
+      - key: VITE_VAPID_PUBLIC_KEY
+        sync: false
     headers:
       - path: /sw.js
         name: Cache-Control
