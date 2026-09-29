@@ -80,6 +80,7 @@ export default function MindMap() {
 
   // Ручные смещения узлов (dx/dy хранятся в базе) + живое смещение при перетаскивании
   const [drag, setDrag] = useState(null)   // { id, dx, dy }
+  const dragRef = useRef(null)             // то же значение, но доступное в обработчиках без побочных эффектов внутри setState
   const posFinal = useMemo(() => {
     const m = new Map()
     pos.forEach((p, id) => {
@@ -102,7 +103,7 @@ export default function MindMap() {
         d: `M${p.x} ${p.y} C${c1[0]} ${c1[1]} ${c2[0]} ${c2[1]} ${c.x} ${c.y}` })
     })
     return out
-  }, [pos, byId])
+  }, [posFinal, byId])
 
   /* ---------- масштаб и положение ---------- */
   const fit = useCallback(() => {
@@ -131,7 +132,7 @@ export default function MindMap() {
   const pts = useRef(new Map()), g = useRef(null), moved = useRef(false), downNode = useRef(null)
   const onDown = e => {
     if (e.target.closest('[data-nopan]')) return
-    e.currentTarget.setPointerCapture(e.pointerId)
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* указатель уже неактивен */ }
     pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     const v = viewRef.current
     if (pts.current.size === 1) {
@@ -141,7 +142,7 @@ export default function MindMap() {
         ? { t: 'node', id: downNode.current, sx: e.clientX, sy: e.clientY }
         : { t: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y }
     } else if (pts.current.size === 2) {
-      setDrag(null)
+      dragRef.current = null; setDrag(null)
       const [a, b] = [...pts.current.values()]
       g.current = { t: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), z: v.z, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, vx: v.x, vy: v.y }
       moved.current = true
@@ -155,7 +156,7 @@ export default function MindMap() {
       const z = viewRef.current.z
       const dx = (e.clientX - s.sx) / z, dy = (e.clientY - s.sy) / z
       if (Math.abs(dx) + Math.abs(dy) > 5 / z) moved.current = true
-      if (moved.current) setDrag({ id: s.id, dx, dy })
+      if (moved.current) { const d = { id: s.id, dx, dy }; dragRef.current = d; setDrag(d) }
     } else if (s.t === 'pan') {
       const dx = e.clientX - s.sx, dy = e.clientY - s.sy
       if (Math.abs(dx) + Math.abs(dy) > 5) moved.current = true
@@ -173,12 +174,10 @@ export default function MindMap() {
     if (pts.current.size === 0) {
       const s = g.current
       if (s?.t === 'node' && moved.current) {
-        // сохранить новое положение узла
-        const n = byId.get(s.id)
-        if (n) setDrag(d => {
-          if (d && d.id === s.id) update(s.id, { dx: (n.dx || 0) + d.dx, dy: (n.dy || 0) + d.dy })
-          return null
-        })
+        // сохранить новое положение узла (вне setState: запись в хранилище внутри обновления состояния роняла приложение)
+        const d = dragRef.current, n = byId.get(s.id)
+        dragRef.current = null; setDrag(null)
+        if (d && n && d.id === s.id) update(s.id, { dx: Math.round((n.dx || 0) + d.dx), dy: Math.round((n.dy || 0) + d.dy) }, null)
       } else if (!moved.current && downNode.current && e.type === 'pointerup') {
         setOpenId(downNode.current)   // тап по узлу — открыть блокнот
       }

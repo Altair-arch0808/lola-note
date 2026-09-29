@@ -2,19 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Plus, Trash2, ImagePlus, Link2, Globe } from 'lucide-react'
 import { uploadImage } from './supabase'
 import { PASTELS, shade } from './util'
+import InkPad from './InkPad'
 
 /* ---------- формат содержимого ----------
    body хранится строкой: либо обычный текст (старые заметки),
-   либо JSON {"v":2,"text":"...","cards":["https://..."]} */
+   либо JSON {"v":2,"text":"...","cards":["https://..."],"ink":{"h":500,"strokes":[…]}} (ink — рукописный слой, см. InkPad) */
 export function parseBody(raw) {
-  if (!raw) return { text: '', cards: [] }
+  if (!raw) return { text: '', cards: [], ink: null }
   if (raw.startsWith('{"v":2')) {
-    try { const o = JSON.parse(raw); return { text: o.text || '', cards: Array.isArray(o.cards) ? o.cards : [] } } catch { /* обычный текст */ }
+    try {
+      const o = JSON.parse(raw)
+      const ink = o.ink && Array.isArray(o.ink.strokes) ? { h: Number(o.ink.h) || 500, strokes: o.ink.strokes } : null
+      return { text: o.text || '', cards: Array.isArray(o.cards) ? o.cards : [], ink }
+    } catch { /* обычный текст */ }
   }
-  return { text: raw, cards: [] }
+  return { text: raw, cards: [], ink: null }
 }
-export const serializeBody = ({ text, cards }) => (!text.trim() && !cards.length) ? '' : JSON.stringify({ v: 2, text, cards })
-export const hasContent = (raw) => { const b = parseBody(raw); return !!(b.text.trim() || b.cards.length) }
+export const serializeBody = ({ text, cards, ink }) => {
+  const hasInk = !!ink?.strokes?.length
+  if (!text.trim() && !cards.length && !hasInk) return ''
+  return JSON.stringify(hasInk ? { v: 2, text, cards, ink } : { v: 2, text, cards })
+}
+export const hasContent = (raw) => { const b = parseBody(raw); return !!(b.text.trim() || b.cards.length || b.ink?.strokes?.length) }
 
 export const isUrl = s => /^https?:\/\/\S+$/i.test(s)
 export const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u } }
@@ -84,13 +93,14 @@ export default function Notebook({ node, path, kids, onOpen, onClose, onAdd, onS
   const [title, setTitle] = useState(node.title)
   const [text, setText] = useState(init.current.text)
   const [cards, setCards] = useState(init.current.cards)
+  const [ink, setInk] = useState(init.current.ink)
   const [link, setLink] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
 
   const taRef = useRef(null), titleRef = useRef(null)
   const dirty = useRef(false), timer = useRef(null)
-  const latest = useRef({}); latest.current = { title, text, cards }
+  const latest = useRef({}); latest.current = { title, text, cards, ink }
   const saveRef = useRef(onSave); saveRef.current = onSave
 
   // Автосохранение: пишем в базу через паузу, а также при закрытии/переходе
@@ -98,8 +108,8 @@ export default function Notebook({ node, path, kids, onOpen, onClose, onAdd, onS
     clearTimeout(timer.current)
     if (!dirty.current) return
     dirty.current = false
-    const { title, text, cards } = latest.current
-    saveRef.current({ title: title.trim() || 'Без названия', body: serializeBody({ text, cards }), image_url: null })
+    const { title, text, cards, ink } = latest.current
+    saveRef.current({ title: title.trim() || 'Без названия', body: serializeBody({ text, cards, ink }), image_url: null })
     setStatus('saved')
   }, [])
   const touch = () => { dirty.current = true; setStatus('saving'); clearTimeout(timer.current); timer.current = setTimeout(flush, 700) }
@@ -209,6 +219,8 @@ export default function Notebook({ node, path, kids, onOpen, onClose, onAdd, onS
             <textarea ref={taRef} className="notebook-text" value={text} spellCheck={false}
                       placeholder="Пиши здесь… Вставь ссылку — она станет карточкой."
                       onChange={e => { setText(e.target.value); touch() }} onPaste={onPaste} />
+
+            <InkPad ink={ink} onChange={v => { setInk(v); touch() }} />
 
             {cards.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-7 mt-6 pt-2">

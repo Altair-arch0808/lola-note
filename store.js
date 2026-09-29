@@ -158,7 +158,7 @@ export async function flush() {
     }
   } finally { busy = null; flushing = false; emit() }
   if (failed.length) {
-    alert(`Не удалось сохранить на сервере (${failed.length}): ${failed[0].message}`)
+    alert(`Не удалось сохранить на сервере (${failed.length}): ${failed[0].message}\n\nЕсли ошибка про колонку или таблицу — выполните fix_database.sql в Supabase → SQL Editor.`)
     new Set(failed.map(f => f.op.table)).forEach(t => refresh(t, meta.get(t), true))
   } else if (sent) meta.forEach((order, t) => refresh(t, order, true))
 }
