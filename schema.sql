@@ -57,7 +57,8 @@ create table if not exists settings (
   user_id uuid primary key default auth.uid() references auth.users on delete cascade,
   bg jsonb,
   covers jsonb,
-  shift jsonb                   -- график вахты: {work, home, start, phase}
+  shift jsonb,                  -- график вахты: {work, home, start, phase}
+  notify jsonb                  -- настройки уведомлений
 );
 
 -- Входящие: быстрые мысли, которые потом разбираются
@@ -98,11 +99,28 @@ create table if not exists moods (
   created_at timestamptz default now()
 );
 
+-- Уведомления: подписки на push (по одной на устройство) и журнал отправленного
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz default now()
+);
+create table if not exists push_sent (
+  user_id uuid not null references auth.users on delete cascade,
+  key text not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, key)
+);
+alter table push_sent enable row level security;   -- политик нет: пишет только сервер (service role)
+
 -- Row Level Security: каждый видит только свои данные
 do $$
 declare t text;
 begin
-  foreach t in array array['events','tasks','mind_nodes','time_blocks','activity_log','settings','inbox','habits','habit_logs','moods'] loop
+  foreach t in array array['events','tasks','mind_nodes','time_blocks','activity_log','settings','inbox','habits','habit_logs','moods','push_subscriptions'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists "own rows" on %I', t);
     execute format('create policy "own rows" on %I for all using (user_id = auth.uid()) with check (user_id = auth.uid())', t);

@@ -203,7 +203,7 @@ export function useRows(table) {
   return useSyncExternalStore(subscribe, () => (uid ? entry(table).rows : EMPTY))
 }
 
-/* ---------- настройки (фон, обложки, график вахты) ---------- */
+/* ---------- настройки (фон, обложки, график вахты, уведомления) ---------- */
 function settingsEntry() {
   if (sEntry.uid !== uid) sEntry = { uid, value: uid ? jget(`lola:s:${uid}`, {}) : {} }
   return sEntry
@@ -222,7 +222,7 @@ async function refreshSettings(force = false) {
   let res
   try { res = await supabase.from('settings').select('*').eq('user_id', me).maybeSingle() } catch { return }
   if (res.error || uid !== me) return
-  let v = res.data ? { bg: res.data.bg, covers: res.data.covers, shift: res.data.shift } : {}
+  let v = res.data ? { bg: res.data.bg, covers: res.data.covers, shift: res.data.shift, notify: res.data.notify } : {}
   for (const o of outbox) if (o.uid === me && o.table === 'settings') v = { ...v, ...o.values }
   setSettings(v)
 }

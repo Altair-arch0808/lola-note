@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Calendar as CalIcon, CheckSquare, Network, Clock, BookOpen, Palette, LogOut, ImagePlus, ChevronDown, RotateCcw, Sun, Inbox as InboxIcon } from 'lucide-react'
+import { Calendar as CalIcon, CheckSquare, Network, Clock, BookOpen, Palette, LogOut, ImagePlus, ChevronDown, RotateCcw, Sun, Inbox as InboxIcon, Bell } from 'lucide-react'
 import { supabase, uploadImage } from './supabase'
 import { setUid, getUid, getStatus, useSettings, saveSettings } from './store'
 import { useTable } from './useTable'
 import SyncBadge from './SyncBadge'
+import NotifyPanel from './Notifications'
+import Reminders from './Reminders'
+import { pushLogout } from './notify'
 import Today from './Today'
 import Inbox from './Inbox'
 import { GRADIENTS, PASTELS } from './util'
@@ -47,7 +50,8 @@ export default function App() {
   const bg = settings.bg || DEFAULT_BG
   const covers = settings.covers || {}
   const inbox = useTable('inbox')                // для счётчика на вкладке «Входящие»
-  const [panel, setPanel] = useState(false)   // выпадающая панель оформления
+  const [panel, setPanel] = useState(null)    // какая панель открыта: 'look' (оформление) | 'notify' (уведомления) | null
+  const openTab = useRef(new URLSearchParams(window.location.search).get('tab'))   // ?tab=… — переход по нажатию на уведомление
   const [group, setGroup] = useState(null)    // какая группа внутри раскрыта: 'bg' | 'cover' | null
   const popRef = useRef(null)
   const uid = session?.user?.id
@@ -71,14 +75,25 @@ export default function App() {
   useEffect(() => {
     if (session === undefined) return
     setUid(uid || null)
-    setPanel(false); setGroup(null); setTab('today')
+    setPanel(null); setGroup(null)
+    setTab(TABS.some(t => t.id === openTab.current) ? openTab.current : 'today')
+    if (openTab.current) { openTab.current = null; window.history.replaceState(null, '', window.location.pathname) }
   }, [uid, session === undefined]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Нажали на уведомление, пока приложение уже открыто: сервис-воркер просит перейти на нужную вкладку
+  useEffect(() => {
+    const sw = navigator.serviceWorker
+    if (!sw) return
+    const onMsg = e => { if (e.data?.type === 'lola-open' && TABS.some(t => t.id === e.data.tab)) setTab(e.data.tab) }
+    sw.addEventListener('message', onMsg)
+    return () => sw.removeEventListener('message', onMsg)
+  }, [])
 
   // Закрытие панели по клику снаружи и по Esc
   useEffect(() => {
     if (!panel) return
-    const onDown = e => { if (!popRef.current?.contains(e.target)) setPanel(false) }
-    const onKey = e => { if (e.key === 'Escape') setPanel(false) }
+    const onDown = e => { if (!popRef.current?.contains(e.target)) setPanel(null) }
+    const onKey = e => { if (e.key === 'Escape') setPanel(null) }
     document.addEventListener('pointerdown', onDown)
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
@@ -89,6 +104,7 @@ export default function App() {
   const signOut = async () => {
     const { pending } = getStatus()
     if (pending && !confirm(`Не отправлено на сервер: ${pending}. При выходе эти записи пропадут. Всё равно выйти?`)) return
+    await pushLogout()                    // подписка на push принадлежит аккаунту — снимаем её до выхода
     setUid(null)
     const { error } = await supabase.auth.signOut()
     if (error) await supabase.auth.signOut({ scope: 'local' })   // без сети — выходим только на этом устройстве
@@ -110,6 +126,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen" style={style}>
+      <Reminders />
       <div className="max-w-6xl mx-auto p-3 sm:p-6">
         <nav className="card !p-2 flex flex-wrap items-center gap-1 mb-4 relative z-30">
           {TABS.map(t => (
@@ -124,11 +141,15 @@ export default function App() {
           ))}
           <div className="ml-auto flex items-center gap-1" ref={popRef}>
             <SyncBadge />
-            <button className={panel ? 'btn !px-3' : 'btn-ghost'} aria-label="Оформление" aria-expanded={panel}
-                    onClick={() => setPanel(!panel)}><Palette size={18} /></button>
+            <button className={panel === 'notify' ? 'btn !px-3' : 'btn-ghost'} aria-label="Уведомления" aria-expanded={panel === 'notify'}
+                    onClick={() => setPanel(panel === 'notify' ? null : 'notify')}><Bell size={18} /></button>
+            <button className={panel === 'look' ? 'btn !px-3' : 'btn-ghost'} aria-label="Оформление" aria-expanded={panel === 'look'}
+                    onClick={() => setPanel(panel === 'look' ? null : 'look')}><Palette size={18} /></button>
             <button className="btn-ghost" aria-label="Выйти" onClick={signOut}><LogOut size={18} /></button>
 
-            {panel && (
+            {panel === 'notify' && <NotifyPanel />}
+
+            {panel === 'look' && (
               <div className="absolute right-2 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-white/95 shadow-soft
                               border border-beige/60 p-2 space-y-2 anim-pop">
                 <Section title="Фон" open={group === 'bg'} onToggle={() => toggle('bg')}
