@@ -60,9 +60,17 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let d = {}
   try { d = e.data ? e.data.json() : {} } catch { d = { body: e.data ? e.data.text() : '' } }
-  e.waitUntil(self.registration.showNotification(d.title || 'Планер', {
-    body: d.body || '', tag: d.tag, icon: '/icon-192.png', lang: 'ru', data: { tab: d.tab || 'today' }
-  }))
+  e.waitUntil((async () => {
+    const opts = { body: d.body || '', tag: d.tag, icon: '/icon-192.png', lang: 'ru', data: { tab: d.tab || 'today' } }
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const open = wins.filter(c => c.visibilityState === 'visible')
+    if (open.length) {                         // приложение на экране: мелодию играет оно само, системный звук не нужен
+      opts.silent = true
+      open.forEach(c => c.postMessage({ type: 'lola-alert', key: d.tag, sound: d.sound, vibrate: d.vibrate }))
+    } else if (d.silent) opts.silent = true
+    else if (Array.isArray(d.vibrate) && d.vibrate.length) opts.vibrate = d.vibrate   // silent и vibrate вместе нельзя
+    await self.registration.showNotification(d.title || 'Планер', opts)
+  })())
 })
 
 // Нажатие: открываем приложение на нужной вкладке (или переключаем уже открытое)
