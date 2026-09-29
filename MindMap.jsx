@@ -78,11 +78,24 @@ export default function MindMap() {
   const { pos, bounds } = useMemo(() => computeLayout(kids, collapsed), [kids, collapsed])
   const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
 
+  // Ручные смещения узлов (dx/dy хранятся в базе) + живое смещение при перетаскивании
+  const [drag, setDrag] = useState(null)   // { id, dx, dy }
+  const posFinal = useMemo(() => {
+    const m = new Map()
+    pos.forEach((p, id) => {
+      const n = byId.get(id)
+      let x = p.x + (n?.dx || 0), y = p.y + (n?.dy || 0)
+      if (drag && drag.id === id) { x += drag.dx; y += drag.dy }
+      m.set(id, { ...p, x, y })
+    })
+    return m
+  }, [pos, byId, drag])
+
   const edges = useMemo(() => {
     const out = []
-    pos.forEach((c, id) => {
+    posFinal.forEach((c, id) => {
       const n = byId.get(id); if (!n) return
-      const p = n.parent_id && pos.get(n.parent_id) ? pos.get(n.parent_id) : { x: 0, y: 0, r: 0, a: c.a }
+      const p = n.parent_id && posFinal.get(n.parent_id) ? posFinal.get(n.parent_id) : { x: 0, y: 0, r: 0, a: c.a }
       const m = (p.r + c.r) / 2
       const c1 = polar(m, p.r === 0 ? c.a : p.a), c2 = polar(m, c.a)
       out.push({ id, depth: c.depth, color: n.color,
@@ -124,8 +137,11 @@ export default function MindMap() {
     if (pts.current.size === 1) {
       moved.current = false
       downNode.current = e.target.closest('[data-node]')?.dataset.node || null
-      g.current = { t: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y }
+      g.current = downNode.current
+        ? { t: 'node', id: downNode.current, sx: e.clientX, sy: e.clientY }
+        : { t: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y }
     } else if (pts.current.size === 2) {
+      setDrag(null)
       const [a, b] = [...pts.current.values()]
       g.current = { t: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), z: v.z, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, vx: v.x, vy: v.y }
       moved.current = true
@@ -135,7 +151,12 @@ export default function MindMap() {
     if (!pts.current.has(e.pointerId)) return
     pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     const s = g.current; if (!s) return
-    if (s.t === 'pan') {
+    if (s.t === 'node') {
+      const z = viewRef.current.z
+      const dx = (e.clientX - s.sx) / z, dy = (e.clientY - s.sy) / z
+      if (Math.abs(dx) + Math.abs(dy) > 5 / z) moved.current = true
+      if (moved.current) setDrag({ id: s.id, dx, dy })
+    } else if (s.t === 'pan') {
       const dx = e.clientX - s.sx, dy = e.clientY - s.sy
       if (Math.abs(dx) + Math.abs(dy) > 5) moved.current = true
       if (moved.current) setView(v => ({ ...v, x: s.vx + dx, y: s.vy + dy }))
@@ -150,7 +171,17 @@ export default function MindMap() {
     if (!pts.current.has(e.pointerId)) return
     pts.current.delete(e.pointerId)
     if (pts.current.size === 0) {
-      if (!moved.current && downNode.current && e.type === 'pointerup') setOpenId(downNode.current)   // тап по узлу — открыть блокнот
+      const s = g.current
+      if (s?.t === 'node' && moved.current) {
+        // сохранить новое положение узла
+        const n = byId.get(s.id)
+        if (n) setDrag(d => {
+          if (d && d.id === s.id) update(s.id, { dx: (n.dx || 0) + d.dx, dy: (n.dy || 0) + d.dy })
+          return null
+        })
+      } else if (!moved.current && downNode.current && e.type === 'pointerup') {
+        setOpenId(downNode.current)   // тап по узлу — открыть блокнот
+      }
       g.current = null; downNode.current = null
     } else if (pts.current.size === 1) {
       const [p] = [...pts.current.values()], v = viewRef.current
@@ -210,12 +241,12 @@ export default function MindMap() {
             </button>
           </div>
 
-          {nodes.filter(n => pos.has(n.id)).map(n => {
-            const p = pos.get(n.id), { w, h } = SIZE(p.depth), sub = descendants(n.id).length
+          {nodes.filter(n => posFinal.has(n.id)).map(n => {
+            const p = posFinal.get(n.id), { w, h } = SIZE(p.depth), sub = descendants(n.id).length
             return (
               <div key={n.id} data-node={n.id} role="button" tabIndex={0} aria-label={`Открыть блокнот: ${n.title}`}
                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenId(n.id) } }}
-                   className="group absolute rounded-2xl shadow-soft cursor-pointer hover:shadow-lg transition-shadow"
+                   className="group absolute rounded-2xl shadow-soft cursor-grab active:cursor-grabbing hover:shadow-lg transition-shadow"
                    style={{ left: p.x - w / 2, top: p.y - h / 2, width: w, height: h, background: n.color,
                             border: `2px solid ${shade(n.color, -0.14)}` }}>
                 <div className="h-full px-3 flex items-center gap-2">
@@ -256,7 +287,7 @@ export default function MindMap() {
           </div>
         ) : (
           <p className="absolute bottom-2 left-3 text-xs opacity-50 pointer-events-none">
-            Нажми на узел — откроется блокнот · «+» под узлом добавляет раздел · тяни фон, чтобы двигать карту
+            Нажми на узел — откроется блокнот · «+» под узлом добавляет раздел · тяни узел, чтобы переместить его, фон — чтобы двигать карту
           </p>
         )}
       </div>
