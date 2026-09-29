@@ -3,6 +3,7 @@ import { X, Plus, Trash2, ImagePlus, Link2, Globe } from 'lucide-react'
 import { uploadImage } from './supabase'
 import { PASTELS, shade } from './util'
 import InkPad from './InkPad'
+import { getPreview } from './linkPreview'
 
 /* ---------- формат содержимого ----------
    body хранится строкой: либо обычный текст (старые заметки),
@@ -28,41 +29,51 @@ export const hasContent = (raw) => { const b = parseBody(raw); return !!(b.text.
 export const isUrl = s => /^https?:\/\/\S+$/i.test(s)
 export const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u } }
 
-/* ---------- карточка: картинка или ссылка ---------- */
+/* ---------- карточка: фото, превью сайта или ссылка ----------
+   1) ссылка ведёт прямо на картинку — показываем её;
+   2) ссылка на страницу — достаём главное фото страницы (og:image), см. linkPreview.js;
+   3) фото нет или оно не грузится — обычная карточка со ссылкой. */
 const kindCache = new Map()
 function useKind(url) {
-  const [kind, setKind] = useState(kindCache.get(url) || 'checking')
+  const [k, setK] = useState(kindCache.get(url) || { kind: 'checking' })
   useEffect(() => {
-    if (kindCache.has(url)) { setKind(kindCache.get(url)); return }
+    if (kindCache.has(url)) { setK(kindCache.get(url)); return }
     let off = false
-    const im = new Image()
-    im.referrerPolicy = 'no-referrer'
-    im.onload = () => { kindCache.set(url, 'img'); if (!off) setKind('img') }
-    im.onerror = () => { kindCache.set(url, 'link'); if (!off) setKind('link') }
-    im.src = url
+    const done = v => { kindCache.set(url, v); if (!off) setK(v) }
+    const load = (src, ok, fail) => {
+      const im = new Image()
+      im.referrerPolicy = 'no-referrer'
+      im.onload = ok; im.onerror = fail; im.src = src
+    }
+    load(url, () => done({ kind: 'img', src: url }), async () => {
+      const p = await getPreview(url).catch(() => null)
+      if (!p) return done({ kind: 'link' })
+      if (!p.image) return done({ kind: 'link', title: p.title })
+      load(p.image, () => done({ kind: 'img', src: p.image, title: p.title }), () => done({ kind: 'link', title: p.title }))
+    })
     return () => { off = true }
   }, [url])
-  return kind
+  return k
 }
 
 const TILT = [-1.6, 1.2, -0.6, 1.8]
 
 function Card({ url, i, onRemove }) {
-  const kind = useKind(url)
+  const k = useKind(url)
   const rm = (
     <button type="button" aria-label="Убрать карточку" onClick={onRemove}
             className="absolute -top-2 -right-2 z-10 w-6 h-6 rounded-full bg-white shadow grid place-items-center hover:bg-rose-soft transition">
       <X size={13} />
     </button>
   )
-  if (kind === 'checking') return <div className="h-32 rounded-md bg-white/70 animate-pulse" />
-  if (kind === 'img') return (
+  if (k.kind === 'checking') return <div className="h-32 rounded-md bg-white/70 animate-pulse" />
+  if (k.kind === 'img') return (
     <div className="relative" style={{ transform: `rotate(${TILT[i % TILT.length]}deg)` }}>
       <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-5 bg-rose-soft/80 rotate-[-3deg] shadow-sm" />
       {rm}
       <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-white p-2 pb-1 shadow-soft rounded-md">
-        <img src={url} alt="" referrerPolicy="no-referrer" className="w-full max-h-64 object-cover rounded-sm" />
-        <div className="font-hand text-lg text-ink/70 truncate pt-1">{host(url)}</div>
+        <img src={k.src} alt={k.title || ''} referrerPolicy="no-referrer" className="w-full max-h-64 object-cover rounded-sm" />
+        <div className="font-hand text-lg text-ink/70 truncate pt-1">{k.title || host(url)}</div>
       </a>
     </div>
   )
@@ -73,7 +84,7 @@ function Card({ url, i, onRemove }) {
          className="flex items-center gap-3 bg-cream rounded-xl p-3 shadow-soft hover:brightness-95 transition">
         <span className="w-9 h-9 rounded-lg bg-white/80 grid place-items-center shrink-0"><Globe size={18} /></span>
         <span className="min-w-0">
-          <span className="block font-hand text-xl leading-5 truncate">{host(url)}</span>
+          <span className="block font-hand text-xl leading-5 truncate">{k.title || host(url)}</span>
           <span className="block text-[11px] opacity-60 truncate">{url}</span>
         </span>
       </a>
