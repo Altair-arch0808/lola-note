@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { useTable } from './useTable'
 import { PASTELS, ymd, parseYmd, addDays, monday, pad } from './util'
+import { useSettings } from './store'
+import { shiftAt, ctxVisible, nextCtx, CTX, SHIFT_COLORS, PHASE } from './shift'
 
 const H = 48, START = 6, END = 23
 const hours = Array.from({ length: END - START }, (_, i) => START + i)
 const hm = min => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`
 
 export default function Planner() {
-  const { rows, add, update, remove } = useTable('time_blocks')
+  const table = useTable('time_blocks')
+  const { add, update, remove } = table
+  const { shift } = useSettings()
+  const [ctx, setCtx] = useState('all')                 // фильтр: all | work | home
+  const rows = table.rows.filter(b => ctxVisible(b.context, ctx))
   const [mode, setMode] = useState('day')
   const [date, setDate] = useState(new Date())
   const [resize, setResize] = useState(null) // { id, dur }
@@ -19,7 +25,7 @@ export default function Planner() {
     const r = e.currentTarget.getBoundingClientRect()
     const h = START + Math.floor((e.clientY - r.top) / H)
     const title = prompt('Название блока')
-    if (title) await add({ title, day: ymd(d), start_min: h * 60, duration_min: 60,
+    if (title) await add({ title, day: ymd(d), start_min: h * 60, duration_min: 60, context: ctx === 'all' ? 'any' : ctx,
                            color: PASTELS[Math.floor(Math.random() * PASTELS.length)] })
   }
   const drop = (e, d) => {
@@ -50,7 +56,8 @@ export default function Planner() {
     return (
       <div className="grid grid-cols-7 gap-1">
         {cells.map((d, i) => !d ? <div key={i} /> : (
-          <button key={i} className="min-h-20 rounded-xl bg-white/60 p-1 text-left hover:bg-white"
+          <button key={i} className={`min-h-20 rounded-xl p-1 text-left hover:brightness-95 ${shiftAt(shift, d) ? '' : 'bg-white/60 hover:bg-white'}`}
+                  style={shiftAt(shift, d) ? { background: `${SHIFT_COLORS[shiftAt(shift, d).phase]}b3` } : undefined}
                   onClick={() => { setDate(d); setMode('day') }}>
             <div className="text-xs">{d.getDate()}</div>
             {rows.filter(b => b.day === ymd(d)).slice(0, 3).map(b => (
@@ -64,6 +71,11 @@ export default function Planner() {
 
   return (
     <div className="card">
+      <div className="flex flex-wrap gap-1 mb-2" role="group" aria-label="Фильтр по месту">
+        {[['all', 'Все'], ['work', `${CTX.work.emoji} На вахте`], ['home', `${CTX.home.emoji} Дома`]].map(([k, l]) => (
+          <button key={k} onClick={() => setCtx(k)} aria-pressed={ctx === k} className={ctx === k ? 'btn !py-1' : 'btn-ghost !py-1'}>{l}</button>
+        ))}
+      </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {[['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц']].map(([k, l]) => (
           <button key={k} onClick={() => setMode(k)} className={mode === k ? 'btn' : 'btn-ghost'}>{l}</button>
@@ -84,7 +96,8 @@ export default function Planner() {
             </div>
             {days.map(d => (
               <div key={d} className="flex-1 border-l border-beige">
-                {mode === 'week' && <div className="text-center text-xs -mt-5 mb-1">{d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}</div>}
+                {mode === 'week' && <div className="text-center text-xs -mt-5 mb-1 mx-1 rounded-md" style={shiftAt(shift, d) ? { background: SHIFT_COLORS[shiftAt(shift, d).phase] } : undefined}>{d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}</div>}
+                {mode === 'day' && shiftAt(shift, d) && <div className="text-xs mb-1 mx-1 px-2 rounded-md inline-block" style={{ background: SHIFT_COLORS[shiftAt(shift, d).phase] }}>{PHASE[shiftAt(shift, d).phase].emoji} {PHASE[shiftAt(shift, d).phase].label}</div>}
                 <div className="relative" style={{ height: hours.length * H }}
                      onDoubleClick={e => create(d, e)} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, d)}>
                   {hours.map(h => <div key={h} style={{ height: H }} className="border-t border-beige/70" />)}
@@ -95,7 +108,11 @@ export default function Planner() {
                            onDoubleClick={e => { e.stopPropagation(); if (confirm(`Удалить «${b.title}»?`)) remove(b.id) }}
                            className="absolute left-1 right-1 rounded-xl px-2 py-1 text-xs shadow-soft cursor-grab overflow-hidden"
                            style={{ top: ((b.start_min - START * 60) / 60) * H, height: (dur / 60) * H - 2, background: b.color }}>
-                        <b>{b.title}</b><div className="opacity-70">{hm(b.start_min)}–{hm(b.start_min + dur)}</div>
+                        <b>{b.title}</b>
+                        <button type="button" draggable={false} title="Сменить: везде → на вахте → дома" aria-label={`Где: ${CTX[b.context || 'any'].label}. Сменить`}
+                                onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); update(b.id, { context: nextCtx(b.context) }, null) }}
+                                className="absolute top-0.5 right-1 text-[11px] leading-none">{CTX[b.context || 'any'].emoji}</button>
+                        <div className="opacity-70">{hm(b.start_min)}–{hm(b.start_min + dur)}</div>
                         <div onPointerDown={e => startResize(e, b)} className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/10" />
                       </div>
                     )

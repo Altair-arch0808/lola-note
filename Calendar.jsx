@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useTable } from './useTable'
 import { ymd, fmt, countdown, PASTELS, toLocalInput } from './util'
+import { useSettings } from './store'
+import { shiftAt, SHIFT_COLORS, PHASE } from './shift'
+import ShiftCard from './Shift'
 
 export default function Calendar() {
   const { rows, add, remove } = useTable('events', 'starts_at')
+  const { shift } = useSettings()
   const [cur, setCur] = useState(new Date())
   const [now, setNow] = useState(Date.now())
   const [form, setForm] = useState({ title: '', at: toLocalInput(new Date()), color: PASTELS[0] })
@@ -35,20 +39,37 @@ export default function Calendar() {
         <div className="grid grid-cols-7 gap-1 text-center text-xs opacity-60 mb-1">
           {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => <div key={d}>{d}</div>)}
         </div>
+        {shift && (
+          <div className="flex gap-3 text-xs mb-2">
+            {['work', 'home'].map(p => (
+              <span key={p} className="inline-flex items-center gap-1">
+                <span className="w-3 h-3 rounded" style={{ background: SHIFT_COLORS[p] }} /> {PHASE[p].label}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-7 gap-1">
-          {cells.map((d, i) => d === null ? <div key={i} /> : (
-            <button key={i} className="min-h-16 rounded-xl bg-white/60 p-1 text-left hover:bg-white"
+          {cells.map((d, i) => {
+            if (d === null) return <div key={i} />
+            const date = new Date(y, m, d), sh = shiftAt(shift, date)
+            const isToday = ymd(date) === ymd(new Date(now))
+            return (
+            <button key={i} className={`min-h-16 rounded-xl p-1 text-left hover:brightness-95 ${sh ? '' : 'bg-white/60 hover:bg-white'} ${isToday ? 'ring-2 ring-ink/50' : ''}`}
+                    style={sh ? { background: `${SHIFT_COLORS[sh.phase]}b3` } : undefined}
+                    aria-label={sh ? `${d}, ${PHASE[sh.phase].label}${sh.isFirst ? ', первый день' : ''}` : undefined}
                     onClick={() => setForm({ ...form, at: toLocalInput(new Date(y, m, d, 9, 0)) })}>
-              <div className="text-xs">{d}</div>
+              <div className="text-xs flex justify-between"><span>{d}</span>{sh?.isFirst && <span aria-hidden>{PHASE[sh.phase].emoji}</span>}</div>
               {onDay(d).slice(0, 2).map(e => (
                 <div key={e.id} className="truncate text-[10px] rounded px-1 mt-0.5" style={{ background: e.color }}>{e.title}</div>
               ))}
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
 
       <div className="space-y-4">
+        <ShiftCard now={now} />
         <form onSubmit={submit} className="card space-y-2">
           <b>Новое событие</b>
           <input className="input" placeholder="Например: поездка" value={form.title}

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Calendar as CalIcon, CheckSquare, Network, Clock, BookOpen, Palette, LogOut, ImagePlus, ChevronDown, RotateCcw } from 'lucide-react'
+import { Calendar as CalIcon, CheckSquare, Network, Clock, BookOpen, Palette, LogOut, ImagePlus, ChevronDown, RotateCcw, Sun, Inbox as InboxIcon } from 'lucide-react'
 import { supabase, uploadImage } from './supabase'
+import { setUid, getUid, getStatus, useSettings, saveSettings } from './store'
+import { useTable } from './useTable'
+import SyncBadge from './SyncBadge'
+import Today from './Today'
+import Inbox from './Inbox'
 import { GRADIENTS, PASTELS } from './util'
 import Auth from './Auth'
 import Calendar from './Calendar'
@@ -10,8 +15,10 @@ import Planner from './Planner'
 import Journal from './Journal'
 
 const TABS = [
+  { id: 'today', label: 'Сегодня', icon: Sun, View: Today },
   { id: 'calendar', label: 'Календарь', icon: CalIcon, View: Calendar },
   { id: 'tasks', label: 'Задачи', icon: CheckSquare, View: Tasks },
+  { id: 'inbox', label: 'Входящие', icon: InboxIcon, View: Inbox },
   { id: 'mind', label: 'Ментальная карта', icon: Network, View: MindMap },
   { id: 'planner', label: 'Расписание', icon: Clock, View: Planner },
   { id: 'journal', label: 'Журнал', icon: BookOpen, View: Journal }
@@ -35,32 +42,37 @@ function Section({ title, preview, open, onToggle, children }) {
 
 export default function App() {
   const [session, setSession] = useState(undefined)
-  const [tab, setTab] = useState('calendar')
-  const [bg, setBg] = useState(DEFAULT_BG)
-  const [covers, setCovers] = useState({})
+  const [tab, setTab] = useState('today')
+  const settings = useSettings()                 // фон, обложки и график вахты — из локального кэша, синхронизируются сами
+  const bg = settings.bg || DEFAULT_BG
+  const covers = settings.covers || {}
+  const inbox = useTable('inbox')                // для счётчика на вкладке «Входящие»
   const [panel, setPanel] = useState(false)   // выпадающая панель оформления
   const [group, setGroup] = useState(null)    // какая группа внутри раскрыта: 'bg' | 'cover' | null
   const popRef = useRef(null)
   const uid = session?.user?.id
 
+  // Если вошедший ранее пользователь открыл приложение без связи (или связь такая, что токен не обновился),
+  // не выкидываем его на экран входа, а работаем с локальными данными.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => sub.subscription.unsubscribe()
+    let off = false
+    const resolve = (s, err) => {
+      if (s) return s
+      const cached = getUid()
+      if (cached && (err || !navigator.onLine)) return { user: { id: cached }, offline: true }
+      return null
+    }
+    supabase.auth.getSession().then(({ data, error }) => { if (!off) setSession(resolve(data.session, error)) })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(resolve(s, null)))
+    return () => { off = true; sub.subscription.unsubscribe() }
   }, [])
 
-  // Настройки принадлежат пользователю: при смене логина сбрасываем чужие и грузим свои
+  // Данные принадлежат пользователю: при смене логина показываем только его локальные данные
   useEffect(() => {
-    setBg(DEFAULT_BG); setCovers({}); setPanel(false); setGroup(null); setTab('calendar')
-    if (!uid) return
-    let off = false
-    supabase.from('settings').select('*').eq('user_id', uid).maybeSingle().then(({ data }) => {
-      if (off) return
-      if (data?.bg) setBg(data.bg)
-      if (data?.covers) setCovers(data.covers)
-    })
-    return () => { off = true }
-  }, [uid])
+    if (session === undefined) return
+    setUid(uid || null)
+    setPanel(false); setGroup(null); setTab('today')
+  }, [uid, session === undefined]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Закрытие панели по клику снаружи и по Esc
   useEffect(() => {
@@ -72,9 +84,15 @@ export default function App() {
     return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
   }, [panel])
 
-  const save = (nb, nc) => supabase.from('settings').upsert({ user_id: uid, bg: nb, covers: nc })
-  const changeBg = (b) => { setBg(b); save(b, covers) }
-  const changeCover = (patch) => { const c = { ...covers, [tab]: { ...covers[tab], ...patch } }; setCovers(c); save(bg, c) }
+  const changeBg = (b) => saveSettings({ bg: b })
+  const changeCover = (patch) => saveSettings({ covers: { ...covers, [tab]: { ...covers[tab], ...patch } } })
+  const signOut = async () => {
+    const { pending } = getStatus()
+    if (pending && !confirm(`Не отправлено на сервер: ${pending}. При выходе эти записи пропадут. Всё равно выйти?`)) return
+    setUid(null)
+    const { error } = await supabase.auth.signOut()
+    if (error) await supabase.auth.signOut({ scope: 'local' })   // без сети — выходим только на этом устройстве
+  }
   const bgFile = async (f) => { if (f) { const u = await uploadImage(f); if (u) changeBg({ type: 'image', value: u }) } }
   const coverFile = async (f) => { if (f) { const u = await uploadImage(f); if (u) changeCover({ image: u }) } }
   const toggle = (g) => setGroup(group === g ? null : g)
@@ -95,14 +113,20 @@ export default function App() {
       <div className="max-w-6xl mx-auto p-3 sm:p-6">
         <nav className="card !p-2 flex flex-wrap items-center gap-1 mb-4 relative z-30">
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={tab === t.id ? 'btn' : 'btn-ghost'}>
-              <span>{covers[t.id]?.icon || <t.icon size={16} />}</span> {t.label}
+            <button key={t.id} onClick={() => setTab(t.id)} aria-label={t.label} aria-current={tab === t.id ? 'page' : undefined}
+                    className={`relative ${tab === t.id ? 'btn' : 'btn-ghost'}`}>
+              <span>{covers[t.id]?.icon || <t.icon size={16} />}</span>
+              <span className={tab === t.id ? '' : 'hidden sm:inline'}>{t.label}</span>
+              {t.id === 'inbox' && inbox.rows.length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-soft text-[11px] font-bold grid place-items-center">{inbox.rows.length}</span>
+              )}
             </button>
           ))}
-          <div className="ml-auto flex gap-1" ref={popRef}>
+          <div className="ml-auto flex items-center gap-1" ref={popRef}>
+            <SyncBadge />
             <button className={panel ? 'btn !px-3' : 'btn-ghost'} aria-label="Оформление" aria-expanded={panel}
                     onClick={() => setPanel(!panel)}><Palette size={18} /></button>
-            <button className="btn-ghost" aria-label="Выйти" onClick={() => supabase.auth.signOut()}><LogOut size={18} /></button>
+            <button className="btn-ghost" aria-label="Выйти" onClick={signOut}><LogOut size={18} /></button>
 
             {panel && (
               <div className="absolute right-2 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl bg-white/95 shadow-soft
@@ -144,7 +168,7 @@ export default function App() {
         {cover.image && <img src={cover.image} alt="" className="w-full h-36 object-cover rounded-2xl shadow-soft mb-4" />}
         <h1 className="text-2xl font-bold mb-3">{cover.icon} {Active.label}</h1>
         {/* key по пользователю: при смене логина все данные вкладок загружаются заново */}
-        <Active.View key={`${uid}-${tab}`} />
+        <Active.View key={`${uid}-${tab}`} go={setTab} />
       </div>
     </div>
   )

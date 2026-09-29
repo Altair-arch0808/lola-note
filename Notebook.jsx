@@ -16,8 +16,8 @@ export function parseBody(raw) {
 export const serializeBody = ({ text, cards }) => (!text.trim() && !cards.length) ? '' : JSON.stringify({ v: 2, text, cards })
 export const hasContent = (raw) => { const b = parseBody(raw); return !!(b.text.trim() || b.cards.length) }
 
-const isUrl = s => /^https?:\/\/\S+$/i.test(s)
-const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u } }
+export const isUrl = s => /^https?:\/\/\S+$/i.test(s)
+export const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u } }
 
 /* ---------- карточка: картинка или ссылка ---------- */
 const kindCache = new Map()

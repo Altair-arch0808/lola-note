@@ -3,7 +3,7 @@ import { useTable } from './useTable'
 import { ymd, addDays, monday, pad, fmt } from './util'
 
 const ACTION = { created: 'создано', updated: 'изменено', completed: 'выполнено', deleted: 'удалено' }
-const ENTITY = { tasks: 'задача', events: 'событие', mind_nodes: 'узел карты', time_blocks: 'блок времени' }
+const ENTITY = { tasks: 'задача', events: 'событие', mind_nodes: 'узел карты', time_blocks: 'блок времени', habits: 'привычка' }
 
 function buckets(mode) {
   const now = new Date(), out = []
