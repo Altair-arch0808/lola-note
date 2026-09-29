@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { BellRing } from 'lucide-react'
 import { useSettings, saveSettings } from './store'
-import { mergeNotify } from './supabase/functions/_shared/reminders.js'
+import { mergeNotify, alertFor, SOUND_LABELS, VIBES } from './supabase/functions/_shared/reminders.js'
+import { playSound, buzz, unlockAudio } from './sounds'
 import { deviceTz, notifySupported, permission, askPermission, show, isIOS, isStandalone,
          VAPID_KEY, pushSupported, pushActive, enablePush, disablePush } from './notify'
 
@@ -9,6 +10,9 @@ const LEAD_TASK = [[0, 'в момент срока'], [5, 'за 5 минут'], 
 const LEAD_EVENT = [[0, 'в момент начала'], [30, 'за 30 минут'], [60, 'за 1 час'], [180, 'за 3 часа'], [1440, 'за 1 день']]
 const LEAD_BLOCK = [[0, 'в момент начала'], [5, 'за 5 минут'], [10, 'за 10 минут'], [15, 'за 15 минут'], [30, 'за 30 минут']]
 const SHIFT_DAYS = [[1, 'за 1 день'], [3, 'за 3 дня'], [7, 'за неделю']]
+const DIGEST_DAYS = [[1, 'за 1 день'], [2, 'за 2 дня'], [3, 'за 3 дня'], [5, 'за 5 дней'], [7, 'за неделю']]
+const CATS = [['tasks', '📝 Задачи'], ['events', '📅 События'], ['blocks', '🗓️ Расписание'], ['shift', '🏗️ Смена вахты'],
+              ['digest', '🧳 Дайджест'], ['morning', '☀️ Утренняя сводка'], ['habits', '✨ Привычки'], ['mood', '🙂 Настроение']]
 
 // Строка настройки: переключатель + (когда включено) параметры
 function Row({ icon, title, hint, on, onChange, disabled, children }) {
@@ -32,6 +36,11 @@ const Select = ({ value, onChange, options, label }) => (
     {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
   </select>
 )
+const Pick = ({ value, onChange, options, label }) => (
+  <select className="input !w-auto !py-1 !px-2 text-sm" aria-label={label} value={value} onChange={e => onChange(e.target.value)}>
+    {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+  </select>
+)
 const Time = ({ value, onChange, label }) => (
   <input type="time" className="input !w-auto !py-1" aria-label={label} value={value} onChange={e => e.target.value && onChange(e.target.value)} />
 )
@@ -43,6 +52,7 @@ export default function NotifyPanel() {
   const [push, setPush] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [snd, setSnd] = useState(false)          // раскрыт ли раздел «Звук и вибрация»
 
   useEffect(() => { pushActive().then(setPush) }, [])
 
@@ -64,8 +74,14 @@ export default function NotifyPanel() {
     catch (e) { setMsg(e.message || 'Не получилось изменить') }
     setBusy(false)
   }
+  const setAlert = (cat, patch) => save({ alert: { ...n.alert, [cat]: { ...n.alert[cat], ...patch } } })
+  const preview = (cat, patch) => {       // послушать выбранное сразу, не дожидаясь напоминания
+    unlockAudio()
+    const a = alertFor({ alert: { [cat]: { ...n.alert[cat], ...patch } } }, cat)
+    playSound(a.sound); buzz(a.vibrate)
+  }
   const test = async () => {
-    const ok = await show({ title: '✨ Планер', body: 'Так будут выглядеть напоминания', key: `test:${Date.now()}`, tab: 'today' })
+    const ok = await show({ title: '✨ Планер', body: 'Так будут выглядеть напоминания', key: `test:${Date.now()}`, tab: 'today' }, alertFor(n, 'tasks'))
     if (!ok) setMsg('Не удалось показать уведомление на этом устройстве.')
   }
 
@@ -105,6 +121,15 @@ export default function NotifyPanel() {
             <span className="text-sm">и в сам день, в</span>
             <Time label="Во сколько" value={n.shift.time} onChange={v => set('shift', { time: v })} />
           </Row>
+          <Row icon="🧳" title="Дайджест перед сменой" hint="Что успеть сделать дома до отъезда на вахту: дела, события, планы" on={n.digest.on} onChange={v => set('digest', { on: v })}>
+            <Select label="За сколько дней прислать дайджест" value={n.digest.days} options={DIGEST_DAYS} onChange={v => set('digest', { days: v })} />
+            <span className="text-sm">в</span>
+            <Time label="Время дайджеста" value={n.digest.time} onChange={v => set('digest', { time: v })} />
+            <label className="basis-full flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 accent-[#b9a5ee]" checked={!!n.digest.back} onChange={e => set('digest', { back: e.target.checked })} />
+              и перед возвращением домой
+            </label>
+          </Row>
           <Row icon="☀️" title="Утренняя сводка" hint="Сколько задач, событий и планов на сегодня" on={n.morning.on} onChange={v => set('morning', { on: v })}>
             <Time label="Время сводки" value={n.morning.time} onChange={v => set('morning', { time: v })} />
           </Row>
@@ -114,6 +139,29 @@ export default function NotifyPanel() {
           <Row icon="🙂" title="Настроение" hint="Если не отмечено за день" on={n.mood.on} onChange={v => set('mood', { on: v })}>
             <Time label="Время напоминания" value={n.mood.time} onChange={v => set('mood', { time: v })} />
           </Row>
+
+          <div className="text-xs opacity-60 pt-1 px-1">Звук и вибрация</div>
+          <div className="rounded-xl bg-white/70 px-3 py-2">
+            <button type="button" className="w-full flex items-center gap-2 text-left font-semibold" aria-expanded={snd} onClick={() => setSnd(!snd)}>
+              <span className="text-lg leading-none">🔊</span><span className="flex-1">Для каждого вида свои</span>
+              <span className="text-xs font-normal opacity-60">{snd ? 'свернуть' : 'настроить'}</span>
+            </button>
+            {snd && (
+              <div className="mt-2 space-y-2 anim-pop">
+                {CATS.map(([cat, name]) => (
+                  <div key={cat} className="flex flex-wrap items-center gap-1">
+                    <span className="basis-full text-sm font-semibold">{name}</span>
+                    <Pick label={`Мелодия: ${name}`} value={n.alert[cat].sound} options={Object.entries(SOUND_LABELS)} onChange={v => { setAlert(cat, { sound: v }); preview(cat, { sound: v }) }} />
+                    <Pick label={`Вибрация: ${name}`} value={n.alert[cat].vibe} options={Object.entries(VIBES).map(([k, v]) => [k, v.label])} onChange={v => { setAlert(cat, { vibe: v }); preview(cat, { vibe: v }) }} />
+                    <button type="button" className="btn-ghost !p-1.5" aria-label={`Послушать: ${name}`} onClick={() => preview(cat, {})}>▶</button>
+                  </div>
+                ))}
+                <p className="text-xs opacity-60">
+                  Мелодия играет, пока приложение открыто. Когда оно свёрнуто или закрыто, звук уведомления системный — его выбирают в настройках телефона (Приложения → Планер → Уведомления). Вибрация работает на Android; на iPhone её для сайтов нет. Если выбрать «без мелодии» и «без вибрации», уведомление придёт беззвучно.
+                </p>
+              </div>
+            )}
+          </div>
 
           <div className="text-xs opacity-60 pt-1 px-1">Тишина</div>
           <Row icon="🌙" title="Не беспокоить" hint="Напоминания переносятся на конец тишины" on={n.quiet.on} onChange={v => set('quiet', { on: v })}>

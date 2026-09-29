@@ -1,6 +1,7 @@
 /* Уведомления: разрешение, показ, журнал «что уже показано» и подписка на push (когда приложение закрыто). */
 import { supabase } from './supabase'
 import { getUid } from './store'
+import { playSound, buzz } from './sounds'
 
 const LS = window.localStorage
 export const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''
@@ -20,8 +21,14 @@ export async function askPermission() {
 
 // Показать уведомление. Через сервис-воркер — так работает на Android и когда вкладка свёрнута;
 // tag = ключ напоминания, поэтому то же напоминание из push не задвоится, а заменит это.
-export async function show({ title, body, key, tab }) {
+// al = alertFor(...): { sound, vibrate, silent }.
+//  • приложение открыто → системное уведомление без звука, а мелодию и вибрацию берёт на себя приложение (чтобы не звучало дважды);
+//  • приложение свёрнуто → системное уведомление со своей вибрацией (звук — системный).
+export async function show({ title, body, key, tab }, al = {}) {
   const opts = { body, tag: key, icon: '/icon-192.png', lang: 'ru', data: { tab: tab || 'today' } }
+  if (document.visibilityState === 'visible') { opts.silent = true; playSound(al.sound); buzz(al.vibrate) }
+  else if (al.silent) opts.silent = true
+  else if (al.vibrate?.length) opts.vibrate = al.vibrate     // silent и vibrate вместе браузер не принимает
   try {
     const reg = await navigator.serviceWorker?.getRegistration()
     if (reg) { await reg.showNotification(title, opts); return true }
