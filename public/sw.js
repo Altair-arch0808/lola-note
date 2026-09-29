@@ -61,7 +61,7 @@ self.addEventListener('push', e => {
   let d = {}
   try { d = e.data ? e.data.json() : {} } catch { d = { body: e.data ? e.data.text() : '' } }
   e.waitUntil((async () => {
-    const opts = { body: d.body || '', tag: d.tag, icon: '/icon-192.png', lang: 'ru', data: { tab: d.tab || 'today' } }
+    const opts = { body: d.body || '', tag: d.tag, icon: '/icon-192.png', badge: '/icon-192.png', lang: 'ru', renotify: !!d.tag, timestamp: Date.now(), data: { tab: d.tab || 'today' } }
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const open = wins.filter(c => c.visibilityState === 'visible')
     if (open.length) {                         // приложение на экране: мелодию играет оно само, системный звук не нужен
